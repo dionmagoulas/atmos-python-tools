@@ -1,0 +1,90 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+from typing import List, Optional, Tuple
+
+def plot_vertical_profiles(
+    csv_path: str,
+    y_col: str,
+    x_cols: List[str],
+    legend_labels: Optional[List[str]] = None,
+    legend_title: Optional[str] = None,
+    title: str = "Vertical Profile",
+    x_label: str = "X-Axis",
+    y_label: str = "Y-Axis",
+    x_lim: Optional[Tuple[float, float]] = None,
+    y_lim: Optional[Tuple[float, float]] = None,
+    marker_size: int = 50
+) -> None:
+    """
+    Reads a CSV file and plots multiple vertical profiles (scatter plots) 
+    on the same figure, dynamically adjusting limits, titles, and labels.
+    """
+    if not os.path.exists(csv_path):
+        print(f"Error: File '{csv_path}' not found.")
+        return
+
+    df = pd.read_csv(csv_path)
+    
+    # Check if the Y-axis column exists in the dataframe
+    if y_col not in df.columns:
+        print(f"Error: Column '{y_col}' does not exist in the dataset.")
+        return
+
+    sns.set_theme(style="whitegrid")
+    plt.figure(figsize=(12, 8))
+    something_plotted = False
+
+    # Dynamically plot each requested X-axis column
+    for i, col_name in enumerate(x_cols):
+        if col_name in df.columns:
+            # Use custom labels if provided, otherwise default to the column name
+            label = legend_labels[i] if legend_labels and i < len(legend_labels) else col_name
+            
+            sns.scatterplot(
+                data=df,
+                x=col_name,
+                y=y_col,
+                label=label,
+                alpha=0.7,
+                s=marker_size
+            )
+            something_plotted = True
+        else:
+            print(f"Warning: Column '{col_name}' was skipped (not found).")
+
+    # Format axes (applied only if at least one data point was plotted)
+    if something_plotted:
+        plt.title(title, fontsize=14, weight='bold')
+        plt.xlabel(x_label, fontsize=12, weight='bold')
+        plt.ylabel(y_label, fontsize=12, weight='bold')
+        
+        # Apply dynamic legend title if provided
+        if legend_title:
+            plt.legend(title=legend_title)
+        else:
+            plt.legend()
+        
+        # Apply dynamic limits if provided as Tuples (e.g., (0, 3000))
+        if x_lim:
+            plt.xlim(x_lim)
+        if y_lim:
+            plt.ylim(y_lim)
+            
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("No data was plotted. Please check the column names.")
+
+
+
+    # Example : Plotting a single variable (e.g., Temperature) without a legend title
+    # plot_vertical_profiles(
+    #     csv_path='Data.csv',
+    #     y_col='alt',
+    #     x_cols=['temp'],
+    #     title='Temperature Profile',
+    #     x_label='Temperature (°C)'
+    #     # legend_title and limits are omitted, so it auto-scales and has no legend title
+    # )
