@@ -1,0 +1,158 @@
+import matplotlib.pyplot as plt
+import numpy as np
+from metpy.plots import SkewT
+from metpy.units import units
+import metpy.calc as mpcalc
+from typing import Dict, Any
+
+def calculate_parcel_trajectory(
+    p_start: float, 
+    t_start: float, 
+    td_start: float, 
+    p_top: float, 
+    p_final: float
+) -> Dict[str, Any]:
+    """
+   Calculates thermodynamic trajectory of an air parcel
+    """
+    # 1. Units
+    p_A = p_start * units.hPa
+    T_A = t_start * units.degC
+    Td_A = td_start * units.degC
+    p_B = p_top * units.hPa
+    p_C = p_final * units.hPa
+
+    # 2. LCL
+    lcl_p, lcl_t = mpcalc.lcl(p_A, T_A, Td_A)
+    w_actual = mpcalc.saturation_mixing_ratio(p_A, Td_A)
+    w_sat = mpcalc.saturation_mixing_ratio(p_A, T_A)
+
+    # 3. Ascent (Dry -> Moist)
+    p_dry_up = np.linspace(p_A.m, lcl_p.m, 50) * units.hPa
+    T_dry_up = mpcalc.dry_lapse(p_dry_up, T_A)
+    
+    #  LCL 
+    e_path = mpcalc.vapor_pressure(p_dry_up, w_actual)
+    Td_path = mpcalc.dewpoint(e_path)
+
+    p_moist_up = np.linspace(lcl_p.m, p_B.m, 50) * units.hPa
+    T_moist_up = mpcalc.moist_lapse(p_moist_up, lcl_t, reference_pressure=lcl_p)
+    T_B = T_moist_up[-1]
+    w_B = mpcalc.saturation_mixing_ratio(p_B, T_B)
+
+    # 4. Descent (Dry)
+    p_down = np.linspace(p_B.m, p_C.m, 50) * units.hPa
+    T_down = mpcalc.dry_lapse(p_down, T_B, reference_pressure=p_B).to('degC')
+    T_C = T_down[-1]
+
+    # 5. Potential Temperatures (Reduction to 1000 hPa)
+    T_potential = mpcalc.dry_lapse(1000 * units.hPa, T_A, reference_pressure=p_A).to('degC')
+    T_moist_pot = mpcalc.moist_lapse(1000 * units.hPa, T_B, reference_pressure=p_B).to('degC')
+
+    # (Dictionary)
+    return {
+        "p_A": p_A, "T_A": T_A, "Td_A": Td_A,
+        "lcl_p": lcl_p, "lcl_t": lcl_t,
+        "p_B": p_B, "T_B": T_B, "w_B": w_B,
+        "p_C": p_C, "T_C": T_C,
+        "T_potential": T_potential, "T_moist_pot": T_moist_pot,
+        "w_actual": w_actual, "w_sat": w_sat,
+        "paths": {
+            "p_dry_up": p_dry_up, "T_dry_up": T_dry_up, "Td_path": Td_path,
+            "p_moist_up": p_moist_up, "T_moist_up": T_moist_up,
+            "p_down": p_down, "T_down": T_down
+        }
+    }
+
+def plot_parcel_trajectory(data: Dict[str, Any], title: str = "Thermodynamic Parcel Trajectory"):
+    """Plots the tephigram with point indicators (Α, Β, C, LCL)."""
+    fig = plt.figure(figsize=(11, 11), dpi=150)
+    skew = SkewT(fig, rotation=45)
+
+    skew.ax.set_ylim(1050, 400)
+    skew.ax.set_xlim(-30, 45)
+
+    # Tephigram Lines
+    skew.plot_dry_adiabats(color='darkorange', alpha=0.3)
+    skew.plot_moist_adiabats(color='blue', alpha=0.3)
+    skew.plot_mixing_lines(color='green', linestyle=':', alpha=0.5)
+
+    # Getting paths from dictionary
+    paths = data["paths"]
+    
+    # Plotting the lines ( Getting the points from the dictionary which are saved as paths ) 
+    skew.plot(paths["p_dry_up"], paths["T_dry_up"], 'r-', linewidth=2.5, label='Dry Ascent')
+    skew.plot(paths["p_dry_up"], paths["Td_path"], 'g-', linewidth=2.5, label='Constant Mixing Ratio')
+    skew.plot(paths["p_moist_up"], paths["T_moist_up"], color='blue', linewidth=2.5, label='Moist Ascent')
+    skew.plot(paths["p_down"], paths["T_down"], color='red', linewidth=2.5, linestyle='--', label='Dry Descent')
+
+    # Ploting points with dynamic text 
+    # A
+    skew.plot(data["p_A"], data["T_A"], 'ro', markersize=8)
+    skew.ax.text(data["T_A"].m + 1, data["p_A"].m - 5, 
+                 f"A ({data['T_A'].m:.1f}°C, {data['p_A'].m:.0f} hPa, {data['w_sat'].to('g/kg').m:.1f} g/kg)", 
+                 color='red', fontsize=11, weight='bold')
+
+    # Dew Point
+    skew.plot(data["p_A"], data["Td_A"], 'go', markersize=8)
+    skew.ax.text(data["Td_A"].m - 2, data["p_A"].m, 
+                 f"Dew point ({data['Td_A'].m:.1f}°C, {data['w_actual'].to('g/kg').m:.1f} g/kg)", 
+                 color='green', fontsize=11, weight='bold', horizontalalignment='right')
+
+    # LCL
+    skew.plot(data["lcl_p"], data["lcl_t"], 'ko', markersize=10, label='LCL')
+    skew.ax.text(data["lcl_t"].m + 2, data["lcl_p"].m - 4, 
+                 f"LCL ({data['lcl_t'].m:.1f}°C, {data['lcl_p'].m:.0f} hPa)", 
+                 fontsize=11, color='black', weight='bold')
+
+    # B Highest Point
+    skew.plot(data["p_B"], data["T_B"], 'bo', markersize=10)
+    skew.ax.text(data["T_B"].m + 2, data["p_B"].m, 
+                 f"B ({data['T_B'].m:.1f}°C, {data['p_B'].m:.0f} hPa, {data['w_B'].to('g/kg').m:.1f} g/kg)", 
+                 color='blue', fontsize=11, weight='bold')
+
+    # C Final Descent
+    skew.plot(data["p_C"], data["T_C"], 'mo', markersize=10)
+    skew.ax.text(data["T_C"].m + 2, data["p_C"].m, 
+                 f"C ({data['T_C'].m:.1f}°C, {data['p_C'].m:.0f} hPa)", 
+                 color='purple', fontsize=11, weight='bold')
+
+    # Potential Temperatures
+    skew.plot(1000, data["T_potential"], marker='o', color='orange', markersize=8)
+    skew.ax.text(data["T_potential"].m + 1, 990, 
+                 f"D ({data['T_potential'].m:.1f}°C, 1000 hPa)", 
+                 color='orange', fontsize=11, weight='bold')
+                 
+    skew.plot(1000, data["T_moist_pot"], marker='o', color='cyan', markersize=8)
+    skew.ax.text(data["T_moist_pot"].m + 1, 1010, 
+                 f"E ({data['T_moist_pot'].m:.1f}°C, 1000 hPa)", 
+                 color='cyan', fontsize=11, weight='bold')
+
+    plt.title(title, fontsize=16, weight='bold')
+    skew.ax.set_xlabel('Temperature (°C)', fontsize=14, weight='bold')
+    skew.ax.set_ylabel('Pressure (hPa)', fontsize=14, weight='bold')
+    skew.ax.legend()
+    plt.show()
+
+if __name__ == "__main__":
+    print("--- Thermodynamic Trajectory Analysis ---")
+    
+    
+    results = calculate_parcel_trajectory(
+        p_start=950.0, 
+        t_start=20.0, 
+        td_start=6.0, 
+        p_top=600.0, 
+        p_final=900.0
+    )
+    
+    # 2. Moisture difference to calculate precipitation amount
+    precip_amount = results["w_actual"] - results["w_B"]
+    
+    # 3. Printing results at terminal
+    print(f" LCL at {results['lcl_p'].m:.1f} hPa with a temperature of {results['lcl_t'].m:.1f} °C")
+    print(f"Final temperature at {results['p_C'].m:.0f} hPa is: {results['T_C'].m:.1f} °C")
+    print(f"Max precipitation amount: {precip_amount.to('g/kg').m:.2f} g/kg")
+    
+    
+    plot_parcel_trajectory(results, title="Thermodynamic Parcel Trajectory")
