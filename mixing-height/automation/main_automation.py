@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import metpy.calc as mpcalc
 from metpy.units import units
 
-# import τις συναρτήσεις μου απο το repository και για τις 3 μεθόδους 
+# import the functions defined in mixing height scripts
 from mixing_height.GradientMethod import calculate_temperature_gradient, find_inversion_peaks, plot_gradient_profile
 from mixing_height.holzworth_parcel import calculate_parcel_mixing_height, plot_holzworth_sounding 
 from mixing_height.richardson_est import calculate_richardson_mixing_height  
