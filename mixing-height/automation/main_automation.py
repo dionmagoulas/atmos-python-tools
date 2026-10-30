@@ -13,7 +13,7 @@ def run_batch_analysis():
     start_day = 6
     end_day = 14
     
-    # Ονόματα στηλών από τα CSV του University of Wyoming
+    # Column names as they appear in CSV file
     PRES = 'pressure_hPa'
     ALT  = 'geopotential height_m'
     TEMP = 'temperature_C'
@@ -21,13 +21,13 @@ def run_batch_analysis():
     WSPD = 'wind speed_m/s'
     WDIR = 'wind direction_degree'
     
-    #Υπολογίζω αυτα, νεές στήλες
-    THT   = 'THT'    # Δυνητική Θερμοκρασία θ (K)
-    THT_V = 'THT_V'  # Εικονική Δυνητική Θερμοκρασία θ_v (K)
+    #Calculating new parameters, adding in CSV as new columns
+    THT   = 'THT'    # Potential Temperature
+    THT_V = 'THT_V'  # Virtual Potential Temperature
     
     results_list = []
     
-    # Δημιουργία φακέλων 
+    # Creating folders for results
     os.makedirs("plots/method1", exist_ok=True)
     os.makedirs("plots/method2", exist_ok=True)
     os.makedirs("plots/method3", exist_ok=True)
@@ -46,11 +46,11 @@ def run_batch_analysis():
         print(f"\n--- 📅 Επεξεργασία ημέρας: {day} Αυγούστου ({file_name}) ---")
         
         try:
-            # 1. Φόρτωση δεδομένων ημέρας και καθαρισμός κενών στα ονόματα στηλών
+            # 1. Loading data and clearing wrong values
             df = pd.read_csv(file_path, skipinitialspace=True)
             df.columns = df.columns.str.strip()
             
-            # 2. Μετατροπή των στηλών σε καθαρούς αριθμούς (float) για αποφυγή TypeError στο MetPy
+            # 2. Transforming data into floats for correct use
             df[PRES] = pd.to_numeric(df[PRES], errors='coerce')
             df[ALT]  = pd.to_numeric(df[ALT], errors='coerce')
             df[TEMP] = pd.to_numeric(df[TEMP], errors='coerce')
@@ -60,7 +60,7 @@ def run_batch_analysis():
             if WDIR in df.columns:
                 df[WDIR] = pd.to_numeric(df[WDIR], errors='coerce')
             
-            # 3. Ορισμός μονάδων MetPy και υπολογισμός θ (THT) και θ_v (THT_V) για χρήση στις συναρτήσεις 
+            # 3. Using metpy for calculations, it need units
             p = df[PRES].values * units.hPa
             T = df[TEMP].values * units.degC
             r = df[MIXR].values * units('g/kg')
@@ -68,7 +68,7 @@ def run_batch_analysis():
             df[THT]   = mpcalc.potential_temperature(p, T).m
             df[THT_V] = mpcalc.virtual_potential_temperature(p, T, r).m
             
-            # Αποθήκευση του εμπλουτισμένου df πίσω στο CSV ώστε οι συναρτήσεις να διαβάζουν από το file_path και να βλέπουν τις στήλες 'THT' και 'THT_V'
+            # Saving new df dataframe into CSV with the new columns
             df.to_csv(file_path, index=False)
             
             # =================================================================
@@ -101,14 +101,14 @@ def run_batch_analysis():
             results_ri, val_method3, ri_status = calculate_richardson_mixing_height(
             file_path, ALT, WSPD, THT_V, target_ri=0.25)
         
-        # Εκτύπωση στο τερματικό ανά ημέρα για άμεσο έλεγχο
+        # Printing status messages
             if ri_status != "Success":
              print(f"  ⚠️ Aug {day:02d} BulkRi: {ri_status}")
             else:
              print(f"  ✅ Aug {day:02d} BulkRi Height: {val_method3:.1f} m")
             
             
-            # Αποθήκευση όλων των αποτελεσμάτων της ημέρας
+            # Saving per day results into a matrix
             results_list.append({
                 'Day': f"Aug {day:02d}",
                 'Method1_Gradient_H (m)': glob_h1,
@@ -122,7 +122,7 @@ def run_batch_analysis():
            print(f"  ❌ Σφάλμα στην ημέρα {day}: {e}")
 
             
-    # Τελικός συγκεντρωτικός πίνακας
+    # Final results 
     if results_list:
         summary_df = pd.DataFrame(results_list)
         print("\n📊 ΤΕΛΙΚΟΣ ΣΥΓΚΕΝΤΡΩΤΙΚΟΣ ΠΙΝΑΚΑΣ (6–14 Αυγούστου - Όλες οι Μέθοδοι):")
@@ -130,7 +130,7 @@ def run_batch_analysis():
         print(summary_df.to_string(index=False))
         print("=" * 75)
         
-        # Αποθήκευση σε CSV
+        # Save as CSV 
         summary_df.to_csv("results/all_methods_summary.csv", index=False)
         print("💾 Ο συγκεντρωτικός πίνακας αποθηκεύτηκε στο results/all_methods_summary.csv")
 
