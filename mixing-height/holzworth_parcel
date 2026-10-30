@@ -67,7 +67,8 @@ def plot_holzworth_sounding(
     alt_col: str, 
     temp_col: str, 
     mixing_height: float, 
-    output_pdf: str = 'Holzworth_Parcel.pdf'
+    output_pdf: str = 'Holzworth_Parcel.pdf',
+    title = "Default Title"
 ):
     """
     Plots the environmental sounding zoomed strictly into the atmospheric boundary layer.
@@ -104,7 +105,7 @@ def plot_holzworth_sounding(
         plt.axhline(y=mixing_height, color='green', linestyle=':', linewidth=2, label=f'Mixing Height: {mixing_height:.1f} m')
         plt.scatter([data['Generated_Sfc'].iloc[0]], [mixing_height], color='green', zorder=5)
 
-    plt.title('Holzworth Method - Boundary Layer Zoom', fontsize=14, fontweight='bold')
+    plt.title(title)
     plt.xlabel('Potential Temperature (K)', fontsize=12)
     plt.ylabel('Altitude (m)', fontsize=12)
     plt.legend(loc='best', fontsize=10)
@@ -118,20 +119,5 @@ def plot_holzworth_sounding(
     plt.tight_layout()
     plt.savefig(output_pdf, bbox_inches='tight', dpi=300)
     print(f"Plot successfully saved as '{output_pdf}'")
-    plt.show()
+    
 
-
-if __name__ == "__main__":     
-    CSV_FILE = 'HolzworthParcel.csv'
-    ALT = 'Altitude1'
-    TEMP = 'Din1'
-    SURFACE_BOOST = 0
-
-    print("Running robust Holzworth Parcel Method Analysis...")
-    df_results, z_mix = calculate_parcel_mixing_height(CSV_FILE, ALT, TEMP, surface_temp_boost=SURFACE_BOOST)
-
-    if df_results is not None and not np.isnan(z_mix):
-        print(f"\n=> Estimated Mixing Height (First Intersection): {z_mix:.2f} m")
-        plot_holzworth_sounding(df_results, ALT, TEMP, z_mix)
-    else:
-        print("\n=> Could not determine mixing height.")
