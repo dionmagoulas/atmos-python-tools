@@ -2,17 +2,17 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional
 
 def calculate_temperature_gradient(
     csv_path: str, 
     alt_col: str, 
     temp_col: str,
-    max_alt: float = 3000.0  # Max altitude by default, can be changed 
+    max_alt: float = 3000.0  # Maximum altitude threshold (m)
 ) -> Optional[pd.DataFrame]:
     """
-    Διαβάζει το CSV και υπολογίζει τη θερμοκρασιακή βαθμίδα (dT/dz).
-    Αποφεύγει τη διαίρεση με το μηδέν αν υπάρχουν διπλότυπα υψόμετρα.
+    Reads the atmospheric profile CSV and calculates the vertical temperature gradient (dT/dz).
+    Prevents division by zero when duplicate altitude levels are present.
     """
     try:
         df = pd.read_csv(csv_path)
@@ -24,47 +24,64 @@ def calculate_temperature_gradient(
         print("Error: Missing required columns.")
         return None
 
-    # Sorting the data by altitude to ensure the values start from the bottom of the atmosphere
+    # Sort data by altitude from the surface upwards and remove missing values
     data = df[[alt_col, temp_col]].dropna().sort_values(by=alt_col).copy()
     
-    # Data filtering so we keep altitudes up to max_alt value
-    data = data[data[alt_col]<=max_alt]
+    # Filter profile up to the specified maximum altitude (max_alt)
+    data = data[data[alt_col] <= max_alt]
     
-    # Calculating ΔΤ for every line of the dataframe by substracting the previous line's value
+    # Calculate vertical differences (dT and dz) between consecutive levels
     data['delta_temp'] = data[temp_col].diff()
     data['delta_height'] = data[alt_col].diff()
     
-    # Avoiding devision with 0 
+    # Calculate vertical gradient (dT/dz) while avoiding division by zero
     data['gradient'] = np.nan
     valid_mask = data['delta_height'] != 0
-    data.loc[valid_mask, 'gradient'] = data.loc[valid_mask, 'delta_temp'] / data.loc[valid_mask, 'delta_height']
+    data.loc[valid_mask, 'gradient'] = (
+        data.loc[valid_mask, 'delta_temp'] / data.loc[valid_mask, 'delta_height']
+    )
     
     return data.dropna().copy()
+
 
 def find_inversion_peaks(
     data: pd.DataFrame, 
     alt_col: str, 
-    grad_col: str = 'gradient'
+    grad_col: str = 'gradient',
+    min_alt: float = 200.0  # Minimum altitude (m) to exclude surface-layer noise
 ) -> Tuple[np.ndarray, np.ndarray, float, float]:
     """
-    Εντοπίζει τα τοπικά και το απόλυτο μέγιστο της θερμοκρασιακής βαθμίδας.
+    Identifies local inversion peaks and the global maximum temperature gradient
+    above a specified minimum altitude threshold (min_alt).
     """
-    gradient_values = data[grad_col].values
-    height_values = data[alt_col].values
+    # Exclude the near-surface layer (below min_alt) to avoid surface-layer artifacts
+    valid_data = data[data[alt_col] >= min_alt]
     
-    # SciPy for finding local gradient maximums
+    # Fallback to full dataset if no data points exist above min_alt
+    if valid_data.empty:
+        valid_data = data
+
+    gradient_values = valid_data[grad_col].values
+    height_values = valid_data[alt_col].values
+    
+    # Detect local gradient maxima using SciPy's find_peaks
     local_max_indices, _ = find_peaks(gradient_values)
     local_max_heights = height_values[local_max_indices]
     local_max_grads = gradient_values[local_max_indices]
     
-    # Finding global gradient maximum
-    global_max_index = np.argmax(gradient_values)
-    global_max_height = height_values[global_max_index]
-    global_max_grad = gradient_values[global_max_index]
+    # Identify the strongest inversion (global maximum) among detected local peaks
+    if len(local_max_grads) > 0:
+        best_peak_idx = np.argmax(local_max_grads)
+        global_max_height = local_max_heights[best_peak_idx]
+        global_max_grad = local_max_grads[best_peak_idx]
+    else:
+        # Fallback to absolute maximum if no distinct local peak is found
+        global_max_index = np.argmax(gradient_values)
+        global_max_height = height_values[global_max_index]
+        global_max_grad = gradient_values[global_max_index]
     
     return local_max_heights, local_max_grads, global_max_height, global_max_grad
 
-# Plot 
 
 def plot_gradient_profile(
     data: pd.DataFrame, 
@@ -73,9 +90,12 @@ def plot_gradient_profile(
     local_h: np.ndarray, 
     local_g: np.ndarray, 
     global_h: float, 
-    global_g: float
+    global_g: float,
+    title: str = "Temperature Gradient Profile"
 ):
-    
+    """
+    Plots the vertical temperature gradient profile along with local and global inversion peaks.
+    """
     plt.figure(figsize=(6, 6))
     plt.plot(data[grad_col], data[alt_col], marker='.', linestyle='-', color='blue', label='Gradient (dT/dz)')
     
@@ -86,22 +106,8 @@ def plot_gradient_profile(
 
     plt.xlabel('Temperature Gradient (K/m)', fontweight='bold')
     plt.ylabel('Altitude (m)', fontweight='bold')
-    plt.title('Boundary Layer: Inversion Radar', fontweight='bold')
+    plt.title(title)
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.legend()
     plt.tight_layout()
-    plt.show()
 
-if __name__ == "__main__":
-    CSV_FILE = 'HolzworthParcel.csv'
-    ALT = 'Altitude2'
-    TEMP = 'Din2'
-
-    print("Analyzing Temperature Gradient...")
-    df_results = calculate_temperature_gradient(CSV_FILE, ALT, TEMP)
-    
-    if df_results is not None and not df_results.empty:
-        loc_h, loc_g, glob_h, glob_g = find_inversion_peaks(df_results, ALT, 'gradient')
-        
-        print(f"Strongest Inversion Cap found at: {glob_h:.1f} meters")
-        plot_gradient_profile(df_results, ALT, 'gradient', loc_h, loc_g, glob_h, glob_g)
