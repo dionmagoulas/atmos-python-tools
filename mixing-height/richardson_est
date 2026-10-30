@@ -1,0 +1,62 @@
+import pandas as pd
+import numpy as np
+
+def calculate_richardson_mixing_height(
+    csv_path: str, 
+    height_col: str, 
+    wind_col: str, 
+    temp_col: str, 
+    target_ri: float = 0.25, 
+    g: float = 9.81,
+    max_alt: float = 5000.0
+) -> tuple: 
+    
+    try:
+        df = pd.read_csv(csv_path)
+    except FileNotFoundError:
+       return None, None, "Missing file"
+
+    required_cols = [height_col, wind_col, temp_col]
+    if not all(col in df.columns for col in required_cols):
+        return None, None, "Missing columns "
+
+    df = df[required_cols].dropna().sort_values(by=height_col).reset_index(drop=True)
+    df = df[df[height_col] <= max_alt].copy()
+
+    if df.empty:
+        return None, None, "Missing data"
+
+    surftemp = df[temp_col].iloc[0]
+    surfheight = df[height_col].iloc[0]
+
+    denominator = surftemp * (df[wind_col] ** 2)
+    df['Ri'] = np.where(
+        denominator > 0, 
+        (g * (df[height_col] - surfheight) * (df[temp_col] - surftemp)) / denominator, 
+        np.nan
+    )
+
+    results = df[[height_col, 'Ri']].dropna().reset_index(drop=True)
+    if results.empty:
+        return results, None, "No valid Ri points"
+
+    max_ri_found = results['Ri'].max()
+    crossing_indices = results.index[(results.index > 0) & (results['Ri'] >= target_ri)]
+
+    if len(crossing_indices) == 0:
+        
+        status_msg = f"Did not reach {target_ri} (Max Ri: {max_ri_found:.2f})"
+        return results, np.nan, status_msg
+
+    idx_above = crossing_indices[0]
+    idx_below = idx_above - 1
+
+    r1, h1 = results.loc[idx_below, 'Ri'], results.loc[idx_below, height_col]
+    r2, h2 = results.loc[idx_above, 'Ri'], results.loc[idx_above, height_col]
+
+    if r2 == r1:
+        estimated_height = h1
+    else:
+        estimated_height = h1 + (target_ri - r1) * (h2 - h1) / (r2 - r1)
+
+    return results, float(estimated_height), "Success"
